@@ -19,14 +19,22 @@ tidy=TRUE, tidy.opts=list(width.cutoff=60), R.options=list(max.print=100))
 
 ## Data Wrangling, Exploration, Visualization
 
-### Name and EID here
+### Kazuma Hirota, kh37775
 
 #### Introduction 
 
 Paragraph or two introducing your datasets and variables, why they are interesting to you, etc.
 
+I chose two datasets related to soccer because soccer has been my biggest passion since I was three years old. The first dataset, "Fifa Audience", records the.
+
 ```{R}
-# read your datasets in here, e.g., with read_csv()
+library(fivethirtyeightdata)
+library(fivethirtyeight)
+fifa <- fifa_audience
+elo <- elo_blatter
+fifa %>% glimpse()
+elo %>% glimpse()
+fifa
 
 ```
 
@@ -35,7 +43,9 @@ Paragraph or two introducing your datasets and variables, why they are interesti
 If your datasets are tidy already, demonstrate that you can reshape data with pivot wider/longer here (e.g., untidy and then retidy). Alternatively, it may be easier to wait until the wrangling section so you can reshape your summary statistics. Note here if you are going to do this.
 
 ```{R}
-# your tidying code (if applicable; can also wait until wrangling section)
+fifa %>% pivot_wider(names_from = confederation, values_from = confederation) -> fifa
+fifa
+fifa %>% pivot_longer(cols = 5:10, names_to="confederation")
 ```
 
     
