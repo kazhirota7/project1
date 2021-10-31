@@ -23,79 +23,156 @@ tidy=TRUE, tidy.opts=list(width.cutoff=60), R.options=list(max.print=100))
 
 #### Introduction 
 
-Paragraph or two introducing your datasets and variables, why they are interesting to you, etc.
+In this project, I chose two datasets found in fivethirtyeight that record the economical data, soccer specific data, and population data for countries that are part of FIFA. The first dataset, "fifa_audience", records the relative population share, TV audience share, and the GDP share for each country. The shares are calculated in percentage, and the TV audience share is recorded particularly for soccer programs. The second dataset, "elo_blatter", records the soccer ELO score of each country in 1998 and 2015, which are determined from the national teams' past performances. The dataset also records the average GDP and the population of each country as well as the sources from which they were acquired. Both datasets are categorized by the confederation based on the continent. 
 
-I chose two datasets related to soccer because soccer has been my biggest passion since I was three years old. The first dataset, "Fifa Audience", records the.
+I decided to perform analysis on the mentioned datasets because soccer has been my biggest passion since age 3. I believe that soccer is a sport that can be enjoyed by anyone regardless of race, gender, or socioeconomic status, and I would like to prove this claim through the project by exploring relationships between economy, culture, and the sport of soccer.
 
 ```{R}
+library(tidyverse)
 library(fivethirtyeightdata)
 library(fivethirtyeight)
+library(gt)
 fifa <- fifa_audience
 elo <- elo_blatter
 fifa %>% glimpse()
 elo %>% glimpse()
-fifa
+
 
 ```
 
 #### Tidying: Reshaping
 
-If your datasets are tidy already, demonstrate that you can reshape data with pivot wider/longer here (e.g., untidy and then retidy). Alternatively, it may be easier to wait until the wrangling section so you can reshape your summary statistics. Note here if you are going to do this.
-
 ```{R}
 fifa %>% pivot_wider(names_from = confederation, values_from = confederation) -> fifa
-fifa
-fifa %>% pivot_longer(cols = 5:10, names_to="confederation")
-```
+fifa %>% pivot_longer(cols = 5:10, values_to="confederation") %>% select(-name) %>% na.omit()-> fifa
+fifa <- fifa[,c(1,5,2,3,4)]
 
-    
+
+``` 
+Here, I expanded the fifa dataset to make each confederation a column, which would show NA if the country does not belong to the confederation. Then, used pivot_longer to tidy the dataset and deleted the name column. Finally, I omitted all of the NAs and reorganized the columns to rearrange the dataset back to its original form. I will perform more tidying in the visualization section.
+
 #### Joining/Merging
 
 ```{R}
-# your joining code
+# perform full join
+fifa %>% full_join(elo, by=c("country","confederation")) -> joined_fifa
+glimpse(joined_fifa)
+```
+The original fifa dataset contains 191 rows and 5 columns, and the original elo dataset contains 209 rows and 8 columns. I performed a full join of the fifa dataset and the elo dataset by "country" and "confederation". I did a full join so that I can determine which countries are unique to each of the datasets and so that I would not lose any data. 
 
-# your joining code
+```{R}
+# determine which countries have multiple rows
+joined_fifa %>% count(country) %>% filter(n>1)
+joined_fifa %>% filter(country == "Yemen" | country == "Tunisia") %>% select(country,confederation)
+
+# revise the original dataset
+fifa$confederation[fifa$country == "Yemen"] <- "AFC"
+fifa$confederation[fifa$country == "Tunisia"] <- "CAF"
+```
+The joined data has 233 rows and 11 columns, and there are a total of 231 unique countries. Tunisia and Yemen had different confederation labels between the two datasets. Since the confederation for Tunisia and Yemen were mislabeled in the fifa dataset, I revised the values on the fifa dataset and performed a full join again. The resulting dataset contained 231 rows and 11 columns, which contains a row for each unique country.
+```{R}
+# perform full join again and replace the dataset
+fifa %>% full_join(elo, by=c("country","confederation")) -> joined_fifa
+glimpse(joined_fifa)
+
+# determine which countries are shared and which are unique
+fifa %>% filter(country %in% elo$country) %>% summarize(n=n()) 
+fifa %>% filter(!country %in% elo$country) %>% summarize(n=n()) 
+elo %>% filter(!country %in% fifa$country) %>% summarize(n=n()) 
+169+22+40
+
+# determine which countries are unique
+fifa %>% filter(!country %in% elo$country)
+elo %>% filter(!country %in% fifa$country)
+
 ```
 
-Discussions of joining here. Feel encouraged to break up into more than once code chunk and discuss each in turn.
+Out of the 231 countries, 169 countries are shared between the two datasets. The fifa dataset contains 22 unique countries, and the elo dataset contains 40 unique countries. Since I performed full join, no data was lost during the process. The number of shared countries plus the number of unique countries for each dataset equals the total observations in the joined dataset (169+22+40=231). The countries that are unique to each dataset can be observed above. For example, in the fifa dataset, there is a country called "United Kingdom", but in the elo dataset, they separated it into "England", "Scotland", "Northern Ireland", and "Wales".
+
 
 ####  Wrangling
 
 ```{R}
-# your wrangling code
+joined_fifa %>% mutate(tv_audience_per_capita = tv_audience_share / population_share) -> joined_fifa_df
 
-# your wrangling code
-
-# your wrangling code
+joined_fifa_df %>% filter(population_share >= 0.5) %>% arrange(desc(tv_audience_per_capita)) %>% select(country,tv_audience_per_capita) %>% slice(1:5) %>% gt()
 ```
 
-Your discussion of wrangling section here. Feel encouraged to break up into more than once code chunk and discuss each in turn.
 
+I created a new variable called tv_audience_per_capita by dividing the tv audience share percentage by the population share. Some countries have a very small population share and the value is rounded to the tenths place, so I only considered the "major" countries that have population share of 0.5 or more for this analysis. This is because some countries have a population share value of 0, which would result in an infinity for TV audience per capita, and many countries have a population share of 0.1, which could be very different from the true population share since the values are rounded. Out of the 39 "major" countries considered, Japan had the highest viewers per capita, followed by Spain and South Korea.
+
+```{R}
+calc_increase <- function(x,y){x-y}
+joined_fifa_df %>% na.omit() %>% group_by(confederation) %>% summarize(mean_increase=mean(calc_increase(elo15,elo98))) %>% gt() %>% tab_header(title="ELO Increase")
+joined_fifa_df %>% na.omit() %>% mutate(elo_increase = calc_increase(elo15,elo98)) -> joined_fifa_df 
+
+```
+
+
+Next, I created a function to calculate the change in ELO score between 1998 and 2015. I calculated the average ELO increase for each confederation. The CONMEBOL had the largest average increase, and AFC had the lowest average increase in ELO over the 17 years. ELO scores are ratings of each country's national soccer team, and the higher ELO score means a stronger team. Countries in UEFA, which are considered to be the greatest countries in the world for soccer, did not have a significant ELO score increase because they have traditionally been the best as well. Countries in CONMEBOL have improved significantly since 1998.  
+
+```{R}
+# Mean, Standard Deviation, and Variance for population share in total and by continent
+joined_fifa_df %>% na.omit() %>% summarize(mean=mean(population_share), sd=sd(population_share), variance = var(population_share), total_share = sum(population_share), max = max(population_share), min = min(population_share)) %>% gt() %>% tab_header(title="Population Share Analysis")
+
+joined_fifa_df %>% na.omit() %>% group_by(confederation) %>% summarize(n=n(),mean=mean(population_share), sd=sd(population_share), variance = var(population_share), total_share = sum(population_share), max = max(population_share), min = min(population_share)) %>% gt() %>% tab_header(title="Population Share Analysis", subtitle="by Continent")
+
+joined_fifa_df %>% arrange(desc(population_share)) %>% select(country) %>% slice(1:3) %>% gt() %>% tab_header(title="Highest Population Share")
+
+```
+
+
+I performed statistical analysis of population share both in total and by continent. AFC has the highest population share by continent, mean population share by country, and the max population share of all countries, which is China. The three countries with the highest population share are China, India, and United States, respectively.
+
+```{R}
+# TV share for each continent
+joined_fifa_df %>% na.omit() %>% summarize(n=n(),mean=mean(tv_audience_share), sd=sd(tv_audience_share), variance = var(tv_audience_share), total_share = sum(tv_audience_share), max = max(tv_audience_share), min = min(tv_audience_share)) %>% gt() %>% tab_header(title="TV Audience Share Analysis")
+
+joined_fifa_df %>% na.omit() %>% group_by(confederation) %>% summarize(n=n(),mean=mean(tv_audience_share), sd=sd(tv_audience_share), variance = var(tv_audience_share), total_share = sum(tv_audience_share), max = max(tv_audience_share), min = min(tv_audience_share)) %>% gt() %>% tab_header(title="TV Audience Share Analysis", subtitle="by Continent")
+```
+
+
+Similar to population share, the AFC has the highest TV audience share. However, the value of the total audience share is much lower than the total population share for AFC. Furthermore, even though CONMEBOL only covers 5.6% of the population share, they cover 13.5% of the TV Audience share. CONMEBOL also has the highest average TV audience share, defeating AFC in the category despite AFC having three times the average population share. Combined with CONMEBOL's rapid increase in the ELO score over the years, countries in CONMEBOL seem to be very passionate about the sport when compared to other confederations.
+
+```{R}
+joined_fifa_df %>% na.omit() %>% summarize("ELO98 and ELO15" = cor(elo98, elo15)) %>% gt()
+joined_fifa_df %>% na.omit() %>% summarize("GDP Share and GDP06" = cor(gdp_weighted_share, gdp06), "GDP Share and Population"=cor(gdp_weighted_share, popu06)) %>% gt()
+```
+
+
+Next, I explored the correlation between multiple variables. As expected, elo98 and elo15 have a strong correlation because many countries do not drastically improve or worsen in soccer over less than two decades. The surprising finding was that GDP share and population did not have as strong of a correlation as I expected. This means that countries with high population may have a low average individual income, therefore leading to a lower than expected total GDP share. Furthermore, GDP share and average GDP also did not have a strong correlation. This is more understandable because smaller countries may have a high individual income (average GDP), but the overall GDP share might be low due to the population.
+
+```{R}
+joined_fifa_df %>% mutate(gdp_source=str_replace_all(gdp_source,"World Bank.*" ,"World Bank"), popu_source=str_replace_all(popu_source, "World Bank.*" ,"World Bank")) %>% mutate(gdp_source=str_replace_all(gdp_source,"CIA.*", "CIA"), popu_source=str_replace_all(popu_source, "CIA.*", "CIA")) -> joined_fifa_df
+
+joined_fifa_df %>% na.omit() %>% group_by(confederation, popu_source) %>% summarize(n=n())
+
+joined_fifa_df %>% na.omit() %>% group_by(confederation, gdp_source) %>% summarize(n=n())
+```
+
+Finally, I performed string operations using Regex to eradicate the differences between inputs. For instance, some inputs had the years attached to the names of the sources while others did not. I used str_replace_all to replace the sources with anything attached to just include the name of the source. Then, I created a table grouped by confederation and the source. For both GDP source and population source, most of the data comes from the World Bank.
 
 #### Visualizing
 
 ```{R}
-# your plot 1
+joined_fifa_df %>% group_by(confederation) %>% ggplot(aes(x=population_share, y=tv_audience_share, color=confederation)) + geom_point(size=1) + facet_wrap(~confederation, scales="free") + geom_smooth(method="lm", lty=2, se = FALSE) + labs(title="TV Audience Share vs. Population Share", x = "Population Share", y="TV Audience Share")
 ```
 
-Your discussion of plot 1
+For each continent, I plotted the population share on the x axis and TV audience share on the y axis to visualize which continent has the highest percentage of soccer viewers. When looking at these plots, we must keep in mind that the x and y scales are different for each plot and with each other. From the trendlines, we can observe that CONMEBOL has the largest soccer fanbase by percentage, for the slope of the trendline is around 2.5. This means that relative to the rest of the world, 2.5 times more people watch soccer on average in South America per capita. On the other hand, AFC has the smallest soccer fanbase by percentage. The slope of the trendline for AFC is around 0.5, meaning that the amount of soccer viewers in Asia per capita is half of the rest of the world. Although I analyzed the TV audience per capita briefly in the earlier section, I was not able to analyze using the full dataset because many countries had very small shares while the resolution was relatively large, which interfered with the calculations. Through these plots, I was able to examine the TV audience per capita for each continent using all of the data available for more accurate analysis.
 
 ```{R}
-# your plot 2
+gather(joined_fifa_df, key=year, value = score, c("elo98", "elo15")) %>% ggplot(aes(x=score,..density.., fill=year)) + geom_histogram(position="identity",bins=25, alpha=0.6) + geom_density(aes(score, color=year), alpha=0) + labs(title="ELO Score Density Distribution in 1998 and 2015", x="ELO Score", y="Density") + scale_y_continuous(breaks=seq(0,0.002,0.00025))
+
 ```
 
-Your discussion of plot 2
+In this plot, I visualized the change in overall ELO score distribution from 1998 to 2015. I reshaped the dataset to make it more tidy, using gather() to get rid of the columns elo98 and elo15. As seen in the graph, the two density distribution plots are very similar, but the density plot in 2015 slightly shifted to the right overall. In the earlier section, I determined that the CONMEBOL had the greatest increase in ELO score over the 17 years by over 100 points in average, and AFC decreased their average score by around 40 points. Although all confederations except for two increased their ELO score between 1998 and 2015, the overall ELO score distribution did not change as much. This occurence can be attributed to the fact that the two confederations that decreased in ELO score are AFC and CAF, which are both larger confederations with more countries when compared to confederations such as OFC and CONMEBOL.
 
 ```{R}
-# your plot 3
+joined_fifa_df %>% ggplot(aes(x=confederation,y=gdp06)) + geom_bar(stat="summary", fun=mean) + geom_errorbar(stat="summary", fun.data=mean_se) + labs(title="Average GDP of Countries in Each Confederation", x="Confederation", y="Average GDP") + scale_y_continuous(breaks=seq(0,30000,5000))
 ```
 
-Your discussion of plot 3
+I plotted the average GDP for each confederation with confidence intervals. Among the confederations, UEFA (Europe) has the highest average GDP while CAF (Africa) has the lowest average GDP. Looking at the above plot and an earlier plot, there does not seem to be a correlation between Average GDP and the TV audience per capita. Although CONMEBOL has the highest TV audience per capita, it has one of the lowest average GDP, and while AFC has the second highest average GDP, the TV audience per capita is the lowest. On the other hand, UEFA has the higest GDP average and also has one of the highest TV audience per capita. Furthermore, AFC exhibits the widest range of confidence interval. This is not by surprise because there are countries in Asia that are very wealthy while some are very poor. 
 
 #### Concluding Remarks
 
-If any!
-
-
-
-
+As I initially hypothesized, there is not a strong relationship between a country's economy and the country's interest and ability in the sport of soccer. CONMEBOL, which is a confederation based in South America, had one of the lowest average GDPs, but its ELO score and the people's passion for the sport were among the higest in the world. There is a reason why soccer is called the "beautiful sport", and I believe one of the reasons is because it can be enjoyed by anyone. Soccer does not require many additional equipments or expensive gears, and it will continue to be the most popular sport in the world.
